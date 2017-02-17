@@ -1,0 +1,339 @@
+---
+title: "Pollution, vous avez dit pollution ?"
+output: 
+  html_document:
+    self_contained: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+En début de semaine, Marsactu publiait [un article](https://marsactu.fr/pollution-industrielle-deux-fois-plus-de-cancers-de-diabete-et-dasthme-a-fos/) pointant du doigt l'impact sanitaire de la pollution industrielle autour de l'étang de Berre, à Fos-sur-Mer spécifiquement. Ce n'est pas un secret : les Bouches-du-Rhône, département industriel, sont exposées à de nombreuses nuisances et pollutions. L'impact précis de ces pollutions sur la santé de la population est complexe à identifier, car il dépend (notamment) des substances considérées, des individus (plus ou moins sensibles à ces substances), et que bien d'autres facteurs, sociologiques notamment, interviennent. Il reste que personne, je crois, ne défend l'idée que ces rejets sont bons pour la santé... 
+
+On peut cartographier une partie de ces sources de pollution. Il existe en effet un [registre public des émissions polluantes](http://www.georisques.gouv.fr/dossiers/irep-registre-des-emissions-polluantes). Il est certes limité, car il ne porte que, selon ce site, sur les principales installations industrielles, les grosses stations d'épuration et certains élevages. Selon laisse donc de côté, notamment, la pollution automobile, les pesticides agricoles (hors ceux des élevages), les rejets des ménages, etc. Néanmoins, ça permet de donner une première approche des plus gros rejets polluants...
+
+```{r, echo=FALSE, include=FALSE}
+library(tidyverse)
+etablissements <- read_csv("./etablissements.csv")
+emissions <- read_csv("./emissions.csv")
+```
+
+Voici donc, en exclusivité mondiale pour Marsactu, la carte des émissions polluantes en 2015 dans les Bouches-du-Rhône. Il ne s'agit ici que des *émissions* : le registre comporte également les prélèvements d'eaux et la production et le traitement de déchets industriels, non pris en compte ici.
+
+```{r carte, echo=FALSE, message=FALSE}
+library(sp)
+library(spdplyr)
+library(MonetDBLite)
+con <- src_monetdblite("~/monetdb/")
+sirene <- tbl(con, "sirene")
+
+emissions <- left_join(emissions, etablissements, by = "Identifiant")
+
+tmp_emissions <- copy_to(con, emissions, "tmp_emissions", temporary = TRUE)
+tmp_emissions <- tbl(con, "tmp_emissions")
+
+emissions <- left_join(tmp_emissions, 
+                       sirene %>% 
+                        mutate(SIRET = SIREN %||% NIC), 
+                       by = c("Numero_SIRET" = "SIRET")) %>% collect()
+emissions <- emissions %>% filter(!is.na(longitude))
+emissions$longitude <- jitter(emissions$longitude, factor = 0.5)
+emissions$latitude <- jitter(emissions$latitude, factor = 0.5)
+coordinates(emissions) <- c("longitude", "latitude")
+proj4string(emissions) <- CRS("+init=epsg:4326")
+
+emissions <- emissions %>% 
+  mutate(PolluantsRegroup = recode(Polluant,
+                                   "Ammoniac (NH3)" = "Polluants atmosphériques généraux",
+                                   "Composés organiques volatils non méthaniques (COVNM)" = "Polluants atmosphériques généraux",
+                                   "Monoxyde de carbone (CO)" = "Polluants atmosphériques généraux",
+                                   "Oxydes d'azote (NOx - NO + NO2) (en eq. NO2)" = "Polluants atmosphériques généraux",
+                                   "Oxydes de soufre (SOx - SO2 + SO3) (en eq. SO2)" = "Polluants atmosphériques généraux",
+                                   "Particules de taille inférieure à 10 µm (PM10)" = "Polluants atmosphériques généraux",
+                                   "Poussières totales (TSP)" = "Polluants atmosphériques généraux",
+                                   "Aluminium et ses composés (Al)" = "Métaux et leurs composés",
+                                   "Arsenic et ses composés (As)" = "Métaux et leurs composés",
+                                   "Cadmium et ses composés (Cd)" = "Métaux et leurs composés",
+                                   "Chrome et ses composés (Cr)" = "Métaux et leurs composés",
+                                   "Chrome hexavalent et ses composés" = "Métaux et leurs composés",
+                                   "Cuivre et ses composés (Cu)" = "Métaux et leurs composés",
+                                   "Etain et ses composés (Sn)" = "Métaux et leurs composés",
+                                   "Fer et ses composés (Fe)" = "Métaux et leurs composés",
+                                   "Manganèse et ses composés (Mn)" = "Métaux et leurs composés",
+                                   "Mercure et ses composés (Hg)" = "Métaux et leurs composés",
+                                   "Nickel et ses composés (Ni)" = "Métaux et leurs composés",
+                                   "Plomb et ses composés (Pb)" = "Métaux et leurs composés",
+                                   "Thallium et ses composés" = "Métaux et leurs composés",
+                                   "Titane et ses composés (Ti)" = "Métaux et leurs composés",
+                                   "Vanadium et ses composés" = "Métaux et leurs composés",
+                                   "Zinc et ses composés (Zn)))" = "Métaux et leurs composés",
+                                   "1,1,1-trichloroéthane (TCE)" = "Substances organochlorées",
+                                   "1,1,2,2-tetrachloroéthane" = "Substances organochlorées",
+                                   "1,2-dichloroéthane (DCE - chlorure d'éthylène)" = "Substances organochlorées",
+                                   "Biphényles polychlorés (PCB)" = "Substances organochlorées",
+                                   "Chloroalcanes (C10-13)" = "Substances organochlorées",
+                                   "Chloroforme (trichlorométhane)" = "Substances organochlorées",
+                                   "Composés organohalogénés (AOX)" = "Substances organochlorées",
+                                   "Dichlorométhane (DCM - chlorure de méthylène)" = "Substances organochlorées",
+                                   "Dioxines et furanes (PCDD + PCDF) (exprimés en iTeq)" = "Substances organochlorées",
+                                   "Hexachlorobenzène (HCB)" = "Substances organochlorées",
+                                   "Hexachlorobutadiène (HCBD)" = "Substances organochlorées",
+                                   "Hexachlorocyclohexane (HCH)" = "Substances organochlorées",
+                                   "Mirex" = "Substances organochlorées",
+                                   "Pentachlorobenzène" = "Substances organochlorées",
+                                   "Pentachlorophénol (PCP)" = "Substances organochlorées",
+                                   "Tétrachloroéthylène (PER - perchloroéthylène)" = "Substances organochlorées",
+                                   "Tétrachlorure de carbone (TCM - tétrachlorométhane)" = "Substances organochlorées",
+                                   "Trichlorobenzènes (TCB)" = "Substances organochlorées",
+                                   "Trichloroéthylène (TRI)" = "Substances organochlorées",
+                                   "Alachlore" = "Pesticides",
+                                   "Atrazine" = "Pesticides",
+                                   "Chlorfenvinphos" = "Pesticides",
+                                   "Chlorpyriphos" = "Pesticides",
+                                   "Diuron" = "Pesticides",
+                                   "Endosulfan" = "Pesticides",
+                                   "Endrine" = "Pesticides",
+                                   "Heptachlore" = "Pesticides",
+                                   "Isodrine" = "Pesticides",
+                                   "Isoproturon" = "Pesticides",
+                                   "Lindane" = "Pesticides",
+                                   "Simazine" = "Pesticides",
+                                   "Toxaphène" = "Pesticides",
+                                   "Trifluraline" = "Pesticides",
+                                   "Triphénylétain et composés" = "Pesticides",
+                                   "Anthracène" = "Autres composés organiques",
+                                   "Benzène" = "Autres composés organiques",
+                                   "Benzène, toluène, éthylbenzène, xylènes (BTEX)" = "Autres composés organiques",
+                                   "Benzo(b)fluoranthène" = "Autres composés organiques",
+                                   "Benzo(g,h,i)pérylène" = "Autres composés organiques",
+                                   "Benzo(k)fluoranthène" = "Autres composés organiques",
+                                   "Composés organostanniques (Sn)" = "Autres composés organiques",
+                                   "Di(2-éthylhexyle)phtalate (DEHP)" = "Autres composés organiques",
+                                   "Diphénylethers bromés" = "Autres composés organiques",
+                                   "Ethylbenzène" = "Autres composés organiques",
+                                   "Fluoranthène" = "Autres composés organiques",
+                                   "Hexabromobiphényle" = "Autres composés organiques",
+                                   "Hydrocarbures aromatiques polycycliques (HAP)" = "Autres composés organiques",
+                                   "Indeno(1,2,3-cd)pyrène" = "Autres composés organiques",
+                                   "Naphthalène" = "Autres composés organiques",
+                                   "Nonylphénols" = "Autres composés organiques",
+                                   "Octylphénols" = "Autres composés organiques",
+                                   "Phénols (Ctotal)" = "Autres composés organiques",
+                                   "Toluène" = "Autres composés organiques",
+                                   "Tributylétain et composés" = "Autres composés organiques",
+                                   "Xylènes" = "Autres composés organiques",
+                                   "CO2 Total (CO2 d'origine biomasse et non biomasse)" = "Dyoxide de carbone",
+                                   "Chlorofluorocarbures (CFC)" = "Autres gaz à effet de serre",
+                                   "Halons" = "Autres gaz à effet de serre",
+                                   "Hexafluorure de soufre (SF6)" = "Autres gaz à effet de serre",
+                                   "Hydrochlorofluorocarbures (HCFC)" = "Autres gaz à effet de serre",
+                                   "Hydroflurocarbures (HFC)" = "Autres gaz à effet de serre",
+                                   "Méthane (CH4)" = "Autres gaz à effet de serre",
+                                   "Perfluorocarbures (PFC)" = "Autres gaz à effet de serre",
+                                   "Protoxyde d'azote (N2O)" = "Autres gaz à effet de serre",
+                                   "Trifluorure d'azote (NF3)" = "Autres gaz à effet de serre",   
+                                   "1,2-dibromo-3-chloropropane" = "Substances toxiques ou cancérigènes",
+                                   "1,2-dibromoéthane (dibromure d'éthylène)" = "Substances toxiques ou cancérigènes",
+                                   "1,2-dichloroéthane (DCE - chlorure d'éthylène)" = "Substances toxiques ou cancérigènes",
+                                   "1,3-butadiène" = "Substances toxiques ou cancérigènes",
+                                   "1,3-dichloro-2-propanol" = "Substances toxiques ou cancérigènes",
+                                   "1,4-dioxane" = "Substances toxiques ou cancérigènes",
+                                   "2-naphtylamine" = "Substances toxiques ou cancérigènes",
+                                   "2-nitropropane" = "Substances toxiques ou cancérigènes",
+                                   "3,3'-dichlorobenzidine" = "Substances toxiques ou cancérigènes",
+                                   "4,4'-méthylène-bis(2-chloroaniline) (MOCA - MBOCA)" = "Substances toxiques ou cancérigènes",
+                                   "Acétaldéhyde (aldéhyde acétique  éthanal)" = "Substances toxiques ou cancérigènes",
+                                   "Acide cyanhydrique (HCN)" = "Substances toxiques ou cancérigènes",
+                                   "Acide fluorhydrique (flurorure d'hydrogène)" = "Substances toxiques ou cancérigènes",
+                                   "Acrylonitrile" = "Substances toxiques ou cancérigènes",
+                                   "Aldéhyde formique (formaldéhyde)" = "Substances toxiques ou cancérigènes",
+                                   "Amiante" = "Substances toxiques ou cancérigènes",
+                                   "Ammoniac (NH3)" = "Substances toxiques ou cancérigènes",
+                                   "Aniline" = "Substances toxiques ou cancérigènes",
+                                   "Antimoine et ses composés (Sb)" = "Substances toxiques ou cancérigènes",
+                                   "Arsenic et ses composés (As)" = "Substances toxiques ou cancérigènes",
+                                   "Benzène" = "Substances toxiques ou cancérigènes",
+                                   "Benzidine (4,4-diaminobiphényle)" = "Substances toxiques ou cancérigènes",
+                                   "Benzo[a]pyrène (benzo[d,e,f]chrysène)" = "Substances toxiques ou cancérigènes",
+                                   "Béryllium (glucinium)" = "Substances toxiques ou cancérigènes",
+                                   "Cadmium et ses composés (Cd)" = "Substances toxiques ou cancérigènes",
+                                   "Chlore" = "Substances toxiques ou cancérigènes",
+                                   "Chloroforme (trichlorométhane)" = "Substances toxiques ou cancérigènes",
+                                   "Chlorométhane (chlorure de méthyle)" = "Substances toxiques ou cancérigènes",
+                                   "Chlorure de vinyle (chloroéthylène - monochlorure de vinyle - CVM))" = "Substances toxiques ou                               cancérigènes",
+                                   "Chrome et ses composés (Cr)" = "Substances toxiques ou cancérigènes", 
+                                   "Cobalt et ses composés (Co)" = "Substances toxiques ou cancérigènes",
+                                   "Crésol (mélange d'isomères)" = "Substances toxiques ou cancérigènes",
+                                   "Cuivre et ses composés (Cu)" = "Substances toxiques ou cancérigènes",
+                                   "Dichlorométhane (DCM - chlorure de méthylène)" = "Substances toxiques ou cancérigènes",
+                                   "Epichlorhydrine (1-chloro-2,3-époxypropane)" = "Substances toxiques ou cancérigènes",
+                                   "Etain et ses composés (Sn)" = "Substances toxiques ou cancérigènes",
+                                   "Ethylèneimine (aziridine)" = "Substances toxiques ou cancérigènes",
+                                   "Fluor et ses composés (F)" = "Substances toxiques ou cancérigènes",
+                                   "Hexachlorobenzène (HCB)" = "Substances toxiques ou cancérigènes",
+                                   "Hydrazine" = "Substances toxiques ou cancérigènes",
+                                   "Manganèse et ses composés (Mn)" = "Substances toxiques ou cancérigènes",
+                                   "Mercure et ses composés (Hg)" = "Substances toxiques ou cancérigènes",
+                                   "Méthanol (alcool méthylique)" = "Substances toxiques ou cancérigènes",
+                                   "Nickel et ses composés (Ni)" = "Substances toxiques ou cancérigènes",
+                                   "Oxyde d'aluminium sous forme fibreuse" = "Substances toxiques ou cancérigènes",
+                                   "Oxyde de bis(chlorométhyle)" = "Substances toxiques ou cancérigènes",
+                                   "Oxyde de propylène (1-2 époxypropane)" = "Substances toxiques ou cancérigènes",
+                                   "Oxyde d'éthylène (oxiranne)" = "Substances toxiques ou cancérigènes",
+                                   "Phénols (Ctotal)" = "Substances toxiques ou cancérigènes",
+                                   "Plomb et ses composés (Pb)" = "Substances toxiques ou cancérigènes",
+                                   "Sulfate de diméthyle" = "Substances toxiques ou cancérigènes",
+                                   "Sulfure de carbone" = "Substances toxiques ou cancérigènes",
+                                   "Sulfure d'hydrogène (H2S)" = "Substances toxiques ou cancérigènes",
+                                   "Tétrachloroéthylène (PER - perchloroéthylène)" = "Substances toxiques ou cancérigènes",
+                                   "Tétrachlorure de carbone (TCM - tétrachlorométhane)" = "Substances toxiques ou cancérigènes",
+                                   "Trichloroéthylène (TRI)" = "Substances toxiques ou cancérigènes",
+                                   "Zinc et ses composés (Zn)" = "Substances toxiques ou cancérigènes",
+                                   "Acide cyanhydrique (HCN)" = "Autres composés", 
+                                   "Chlore et composés inorganiques (HCl)" = "Autres composés",
+                                   "Chlorure de vinyle (chloroéthylène - monochlorure de vinyle - CVM))" = "Autres composés",
+                                   "Chlorures (Cl total)" = "Autres composés",
+                                   "Cyanures (CN total)" = "Autres composés",
+                                   "diméthyldisulfure" = "Autres composés",
+                                   "Fluor et composés inorganiques (HF)" = "Autres composés",
+                                   "Fluorures (F total)" = "Autres composés",
+                                   "Hydrocarbures (C total)" = "Autres composés",
+                                   "Ra 226 insoluble en Bq par an" = "Autres composés",
+                                   "Sulfates" = "Autres composés",
+                                   "Sulfure d'hydrogène (H2S)" = "Autres composés",
+                                   "Azote total (N)" = "Paramètres généraux de pollution de l'eau",
+                                   "Carbone organique total (COT)" = "Paramètres généraux de pollution de l'eau",
+                                   "Demande biologique en oxygène (DBO5)" = "Paramètres généraux de pollution de l'eau",
+                                   "Demande chimique en oxygène (DCO)" = "Paramètres généraux de pollution de l'eau",
+                                   "Matières en suspension (MES)" = "Paramètres généraux de pollution de l'eau",
+                                   "Phosphore total (P)" = "Paramètres généraux de pollution de l'eau",
+                                   "Ra 226 soluble en Bq par an" = "Paramètres généraux de pollution de l'eau",
+                                   "Radium" = "Paramètres généraux de pollution de l'eau",
+                                   "Uranium" = "Paramètres généraux de pollution de l'eau",
+                                   "Barium" = "Paramètres généraux de pollution de l'eau",
+                                   "U 238 insoluble" = "Paramètres généraux de pollution de l'eau",
+                                   "U 238 soluble" = "Paramètres généraux de pollution de l'eau"))
+
+library(leaflet)
+
+leaflet(emissions %>% filter(DEPET %in% "13"), width = "100%") %>%  
+  addTiles(providers$CartoDB.Positron) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Paramètres généraux de pollution de l'eau") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#1f78b4", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Paramètres généraux de pollution de l'eau") %>% 
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Polluants atmosphériques généraux") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#a6cee3", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Polluants atmosphériques généraux"
+  ) %>% 
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Métaux et leurs composés") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#e31a1c", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Métaux et leurs composés"
+  ) %>% 
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Substances organochlorées") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#33a02c", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Substances organochlorées"
+  ) %>%
+  # addCircleMarkers(data = emissions %>% 
+  #     filter(PolluantsRegroup %in% "Pesticides") %>% 
+  #     filter(DEPET %in% "13"),
+  #   radius = ~ log(quantite), 
+  #   fillColor = "#b2df8a", 
+  #   stroke = FALSE,
+  #   popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+  #   group = "Pesticides"
+  # ) %>%  
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Autres composés organiques") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#fdbf6f", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Autres composés organiques"
+  ) %>%  
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Dyoxide de carbone") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#ff7f00", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Dyoxide de carbone"
+  ) %>%  
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Autres gaz à effet de serre") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#cab2d6", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Autres gaz à effet de serre"
+  ) %>%    
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Substances toxiques ou cancérigènes") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#6a3d9a", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Substances toxiques ou cancérigènes"
+  ) %>%    
+  addCircleMarkers(data = emissions %>% 
+      filter(PolluantsRegroup %in% "Autres composés") %>% 
+      filter(DEPET %in% "13"),
+    radius = ~ log(quantite), 
+    fillColor = "#6a3d9a", 
+    stroke = FALSE,
+    popup = ~ paste0(NOMEN_LONG, "<BR>Polluant : ", Polluant, "<BR>Quantité :", quantite, " ", unite),
+    group = "Autres composés"
+  ) %>% 
+  addLayersControl(overlayGroups = c("Paramètres généraux de pollution de l'eau", 
+                                     "Polluants atmosphériques généraux",
+                                     "Métaux et leurs composés",
+                                     "Substances organochlorées",
+                                     "Pesticides",
+                                     "Autres composés organiques",
+                                     "Dyoxide de carbone",
+                                     "Autres gaz à effet de serre",
+                                     "Substances toxiques ou cancérigènes",
+                                     "Autres composés"),
+                   options = layersControlOptions(collapsed = FALSE)) %>% 
+  hideGroup(c("Paramètres généraux de pollution de l'eau", 
+                                     "Métaux et leurs composés",
+                                     "Substances organochlorées",
+                                     "Pesticides",
+                                     "Autres composés organiques",
+                                     "Dyoxide de carbone",
+                                     "Autres gaz à effet de serre",
+                                     "Substances toxiques ou cancérigènes",
+                                     "Autres composés"))
+
+
+```
+
+La carte varie en fonction des substances considérées, mais on retrouve les principaux sites industriels du département : pourtour de l'étang de Berre, Gardanne et ses alentours, embouchure du Rhône... Ce sont surtout des gaz à effets de serre qui sont fréquents ; heureusement, les substances classées comme toxiques ou cancérigènes sont moins fréquemment émises. C'est toutefois sans aucun doute trop pour les riverains et les milieux. De quoi alimenter les débats sur l'avenir industriel de la France. Les Bouches-du-Rhône ont gardé une partie de leur outil industriel, autour de la pétrochimie en particulier ; cela crée de la richesse et des emplois ; mais cela ne va pas sans désagréments. Sera-ce un sujet dans la campagne présidentielle ?
+
+Grâce à ces données, ouvertes mais trop peu connues, on peut identifier les risques de pollution majeurs dans son environnement. Certes, ça n'en protège pas... mais cela permet de leur donner une visibilité. Une meilleure information citoyenne nécessaire, pour que chacun puisse appréhender les enjeux en toute connaissance de cause, et dont de nombreux habitants demande qu'elle soit étendue, comme on l'a vu dans le cas des [boues rouges de Gardanne](https://marsactu.fr/ces-rapports-sur-alteo-presentes-en-commission-de-suivi-de-site-mais-pas-au-public/).
+
