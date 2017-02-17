@@ -337,3 +337,5 @@ La carte varie en fonction des substances considérées, mais on retrouve les pr
 
 Grâce à ces données, ouvertes mais trop peu connues, on peut identifier les risques de pollution majeurs dans son environnement. Certes, ça n'en protège pas... mais cela permet de leur donner une visibilité. Une meilleure information citoyenne nécessaire, pour que chacun puisse appréhender les enjeux en toute connaissance de cause, et dont de nombreux habitants demande qu'elle soit étendue, comme on l'a vu dans le cas des [boues rouges de Gardanne](https://marsactu.fr/ces-rapports-sur-alteo-presentes-en-commission-de-suivi-de-site-mais-pas-au-public/).
 
+
+_Comme d'habitude, les données et le code de cette chronique sont disponibles sur [mon dépôt github](https://github.com/joelgombin/marsactu_pollution)._
